@@ -1,0 +1,18 @@
+INCLUDE_DIRECTORIES(.)
+INCLUDE_DIRECTORIES(${LORAGW_SOURCE_DIR}/modules/include)
+INCLUDE_DIRECTORIES(${LORAGW_SOURCE_DIR}/porting/include)
+INCLUDE_DIRECTORIES(${LORAGW_SOURCE_DIR}/common/include)
+
+
+PROJECT(modules)
+
+SET(MODULES_SRC  	  src/sx1278.c
+
+				)
+
+
+
+ADD_LIBRARY(modules STATIC ${MODULES_SRC})
+
+				
+

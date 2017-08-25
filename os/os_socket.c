@@ -1,0 +1,207 @@
+#include<errno.h>
+#include"os_socket.h"
+#include"os_log.h"
+
+os_socket_udp_t * os_create_udp(unsigned short port,unsigned int ip) 
+{
+	os_socket_udp_t * udp = (os_socket_udp_t *)malloc(sizeof(os_socket_udp_t)); //杩欓噷搴旇瀹炵敤socket姹狅紝鍏堝姩鎬佺敵璇?
+	if(udp == NULL)
+	{
+		os_log_error("malloc udp socket err!");
+		return -1;
+	}
+	
+	int sock = socket(PF_INET,SOCK_DGRAM,0);
+	if(sock <= 0)
+	{
+		os_log_error("socket udp socket err!");
+		return -1;	
+	}
+	udp->socket_fd = sock;
+
+
+	struct sockaddr_in addr;
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	
+	if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	{
+		os_log_error("bind port %d err!",port);
+		return  -1;
+	}
+	
+	int flags = fcntl(sock, F_GETFL, 0);                        //获取文件的flags值。
+    fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+	
+	return udp;
+}
+
+int os_read_socket(int sock,char * buf,int maxlen)
+{
+	int once_len,buf_off=0;
+	
+	while(1) //epoll ET妯″紡锛屽惊鐜
+	{
+		once_len = recv(sock,buf+buf_off,maxlen-buf_off,0);
+		if(once_len < 0)	
+		{
+			if(errno == EAGAIN || errno == EWOULDBLOCK) //宸茬粡璇诲畬
+			{
+				return buf_off;
+			}
+			else
+			{
+				return -1;
+			}
+		}
+		else if(once_len == 0)
+	    {
+			return 0;
+		}
+		
+		buf_off += once_len;
+	}
+}
+
+int os_write_socket(int sock,char * buf,int maxlen)
+{
+	int size;
+	while(1) //epoll ET妯″紡锛屽惊鐜啓
+	{
+		size = send(sock,buf,maxlen,0);
+		if(size <0)
+		{
+			if(errno == EAGAIN)
+			{
+				return 0;
+			}
+		}
+		else
+		{
+			return size;
+		}
+	}
+	return -1;
+}
+
+int  os_read_udp(os_socket_udp_t * udp ,char * buf,int maxlen)
+{
+	int once_len,buf_off=0;
+	
+	while(1) //epoll ET妯″紡锛屽惊鐜
+	{
+		once_len = recv(udp->socket_fd,buf+buf_off,maxlen-buf_off,0);
+		if(once_len < 0)	
+		{
+			if(errno == EAGAIN || errno == EWOULDBLOCK) //宸茬粡璇诲畬
+			{
+				return buf_off;
+			}
+			else
+			{
+				return -1;
+			}
+		}
+		
+		buf_off += once_len;
+	}
+}
+
+os_socket_tcp_t * os_create_tcp(unsigned short port,unsigned int ip)
+{
+	
+		os_socket_tcp_t * tcp = (os_socket_tcp_t *)malloc(sizeof(os_socket_tcp_t)); //杩欓噷搴旇瀹炵敤socket姹狅紝鍏堝姩鎬佺敵璇?
+		if(tcp == NULL)
+		{
+			os_log_error("malloc udp socket err!");
+			return -1;
+		}
+
+		int sock = socket(PF_INET,SOCK_STREAM,0);
+		if(sock <= 0)
+		{
+			os_log_error("socket udp socket err!");
+			return -1;	
+		}
+
+		int on=1;  
+	    if((setsockopt(sock,SOL_SOCKET,SO_REUSEADDR,&on,sizeof(on)))<0)  
+	    {  
+	        perror("setsockopt failed");
+	    }  
+		tcp->socket_fd = sock;
+
+
+		struct sockaddr_in addr;
+		addr.sin_family = AF_INET;
+		addr.sin_port = htons(port);
+		addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+		if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+		{
+			os_log_error("bind port %d err!",port);
+			return	-1;
+		}
+
+		int flags = fcntl(sock, F_GETFL, 0);						//获取文件的flags值。
+		//fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+
+		return tcp;
+}
+
+int  os_tcp_listen(os_socket_tcp_t * tcp)
+{
+	
+	return listen(tcp->socket_fd , 1024*1024);
+}
+
+os_socket_tcp_t * os_accept_tcp(os_socket_tcp_t * tcp)
+{
+	 struct sockaddr_in addr;
+	 int size = sizeof(addr);
+	 
+	 int osSocket = accept(tcp->socket_fd, (struct sockaddr*)&addr, &size);
+	 if(osSocket == -1 && errno == EAGAIN)
+	 {
+		return 0;
+	 }
+	
+	 int flags = fcntl(osSocket, F_GETFL, 0);						 //获取文件的flags值。
+	 fcntl(osSocket, F_SETFL, flags | O_NONBLOCK);
+	 
+	 os_socket_tcp_t * ptcp = (os_socket_tcp_t *)malloc(sizeof(os_socket_tcp_t)); //杩欓噷搴旇瀹炵敤socket姹狅紝鍏堝姩鎬佺敵璇?
+	 ptcp->socket_fd     = osSocket;
+	 ptcp->remote_ip     = ntohl(addr.sin_addr.s_addr);
+	 ptcp->remote_port = ntohs(addr.sin_port);
+	 
+	 return ptcp;
+}
+int os_connect_socket(os_socket_tcp_t * tcp,char * ip,unsigned short port)
+{
+	struct sockaddr_in  addr;
+
+	tcp->remote_port = port;
+	inet_aton(ip,&tcp->remote_ip); 
+
+	bzero(&addr,sizeof(addr));
+	inet_aton(ip,&addr.sin_addr);
+	addr.sin_family = AF_INET;
+	addr.sin_port = htons(port);
+	
+	return  connect(tcp->socket_fd,(struct sockaddr*)&addr,sizeof(addr));
+	
+	
+}
+
+int os_close_socket(int sock)
+{
+	return close(sock);
+}
+
+int os_set_send_bufsize(int sock,int size)
+{
+	int bufSize = size;
+    int err = setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (char*)&bufSize, sizeof(int));
+    return err;
+}
