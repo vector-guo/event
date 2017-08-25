@@ -1,1 +1,0 @@
-cmake .. -DCROSS_COMPILE= -DBOARD=x86
